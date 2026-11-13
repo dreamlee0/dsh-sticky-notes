@@ -1,0 +1,163 @@
+/**
+ * Host half of the memo-calendar bundle.
+ *
+ * The memo board renders entirely in the Web UI, but its data needs a home that
+ * outlives one browser origin (the Desktop Host binds a new loopback port per
+ * launch, so localStorage alone would lose notes on restart). This half owns
+ * one small JSON file and exposes it over a named Web route:
+ *
+ *   GET  /memo-calendar/state  -> { notes: [...] | null, updatedAt }
+ *   PUT  /memo-calendar/state  <- { notes: [...], updatedAt? }
+ *
+ * The Client keeps a localStorage copy for instant paint and falls back to it
+ * whenever the route is unavailable, so the board still works in compositions
+ * without a Web carrier.
+ */
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
+
+/** Services required to mount the route. */
+export const inject = ['webServer'];
+
+/** Exact route path owned by this plugin. */
+const ROUTE_PATH = '/memo-calendar/state';
+/** Hard cap for one state document (notes are small text records). */
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+/** Hard cap for the number of stored notes. */
+const MAX_NOTES = 5000;
+
+const COLORS = new Set(['pink', 'mint', 'lemon', 'sky', 'lilac']);
+
+/** Resolve the Harness home the same way the rest of the Harness does. */
+function resolveHome(env = process.env) {
+  const configured = env.DSH_HOME;
+  if (typeof configured === 'string' && configured.trim().length > 0) return configured.trim();
+  return join(homedir(), '.dsh');
+}
+
+/** Absolute path of the notes document. */
+function statePath(env = process.env) {
+  return join(resolveHome(env), 'memo-calendar', 'notes.json');
+}
+
+/** Accept only the note fields the board understands; the Client normalizes too. */
+function cleanNotes(input) {
+  if (!Array.isArray(input)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of input.slice(0, MAX_NOTES)) {
+    if (!raw || typeof raw !== 'object') continue;
+    if (typeof raw.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw.date)) continue;
+    const id = typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 64) : `n${out.length}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id,
+      date: raw.date,
+      time: typeof raw.time === 'string' && /^\d{2}:\d{2}$/.test(raw.time) ? raw.time : '',
+      text: typeof raw.text === 'string' ? raw.text.slice(0, 2000) : '',
+      color: COLORS.has(raw.color) ? raw.color : 'pink',
+      done: raw.done === true,
+      completedAt: Number.isFinite(raw.completedAt) && raw.completedAt > 0 ? raw.completedAt : 0,
+      createdAt: Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now(),
+    });
+  }
+  return out;
+}
+
+async function readState(file) {
+  try {
+    const parsed = JSON.parse(await readFile(file, 'utf8'));
+    if (!parsed || !Array.isArray(parsed.notes)) return null;
+    return {
+      notes: cleanNotes(parsed.notes),
+      updatedAt: Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : 0,
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+/** Write through a sibling temp file so a crash never truncates the document. */
+async function writeState(file, value) {
+  await mkdir(dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  await writeFile(tmp, JSON.stringify(value), 'utf8');
+  await rename(tmp, file);
+}
+
+function sendJson(res, status, payload) {
+  if (res.writableEnded || res.destroyed) return;
+  const body = JSON.stringify(payload);
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-length': Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        reject(new Error('payload too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+async function handleStateRequest(req, res, file) {
+  const method = req.method || 'GET';
+  if (method === 'GET') {
+    const state = await readState(file);
+    sendJson(res, 200, state ? { notes: state.notes, updatedAt: state.updatedAt } : { notes: null, updatedAt: 0 });
+    return;
+  }
+  if (method === 'PUT' || method === 'POST') {
+    let parsed;
+    try {
+      parsed = JSON.parse(await readBody(req));
+    } catch (error) {
+      const tooLarge = error instanceof Error && error.message === 'payload too large';
+      sendJson(res, tooLarge ? 413 : 400, { error: tooLarge ? 'payload too large' : 'invalid JSON body' });
+      return;
+    }
+    const notes = cleanNotes(parsed && parsed.notes);
+    const updatedAt = Date.now();
+    await writeState(file, { v: 1, updatedAt, notes });
+    sendJson(res, 200, { ok: true, count: notes.length, updatedAt });
+    return;
+  }
+  res.setHeader('allow', 'GET, PUT');
+  sendJson(res, 405, { error: 'method not allowed' });
+}
+
+/** Mount the state route for the lifetime of this plugin entry. */
+export function apply(ctx) {
+  const file = statePath();
+  ctx.effect(
+    () => ctx.webServer.register({
+      kind: 'exact',
+      path: ROUTE_PATH,
+      handler: async (req, res) => {
+        try {
+          await handleStateRequest(req, res, file);
+        } catch (error) {
+          ctx.logger?.warn?.(`[memo-calendar] state route failed: ${String(error)}`);
+          sendJson(res, 500, { error: 'state unavailable' });
+        }
+      },
+    }),
+    'memo-calendar: state route',
+  );
+}

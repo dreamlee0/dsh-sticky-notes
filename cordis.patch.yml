@@ -1,0 +1,5 @@
+# dsh-sticky-notes bundle layer: inserts the plugin row; the sidebar panel icon
+# is registered by the Client module (see client.js).
+- insert:
+    - id: memo-calendar
+      name: 'dsh-sticky-notes'

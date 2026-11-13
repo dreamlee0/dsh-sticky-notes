@@ -1,0 +1,41 @@
+{
+  "name": "dsh-sticky-notes",
+  "version": "1.0.0",
+  "description": "Natural-toned sticky-note memo board with a red-circled month calendar and a live analog/digital clock, as a DeepSeek Harness Web UI panel.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "sticky-notes",
+    "calendar",
+    "memo"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dreamlee0/dsh-sticky-notes.git"
+  },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  }
+}
