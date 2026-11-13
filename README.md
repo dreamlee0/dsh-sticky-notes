@@ -12,6 +12,8 @@ dsh plugin --profile web add github:dreamlee0/dsh-sticky-notes
 
 Desktop profile uses the same command with `--profile desktop`. Restart `dsh web` (or the Desktop app) after installing; the panel icon appears in the left rail.
 
+也可以在图形界面安装：装好插件市场（`dsh plugin --profile web add dshmarket`）后，在 **Plugins → Discover** 搜索 `dreamlee0/dsh-sticky-notes` 一键安装。
+
 ## 功能 / Features
 
 - **便利贴墙**：新建便签时可设日期、时间、颜色；右上角圆圈即对勾，点一下完成。
