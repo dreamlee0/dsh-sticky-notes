@@ -1,41 +1,57 @@
-# 便利贴日历 / Sticky Note Calendar
+# dsh-sticky-notes / 便利贴日历
 
-DeepSeek Harness Web UI 插件：左侧是便利贴备忘录，右侧是自然风月历，日程按日期在日历上显示。
+DeepSeek Harness (DSH) Web UI 插件：左侧便利贴备忘录，右侧自然风月历，日程按日期显示在日历上。
 
-## 打开方式
+A sticky-note memo board with a natural-toned month calendar, mounted as a sidebar panel in the DeepSeek Harness Web UI.
 
-安装后，左侧栏（面板图标区）会出现一张「便利贴」图标，点击即可打开面板：
+## 安装 / Install
 
-- 左栏：便利贴墙。点「新建便利贴」写一张，可设日期、时间、颜色，或编辑、删除；便签右上角的圆圈是对勾，点一下即完成——便签从「未完成」消失，但**完成记录会保留**，切到「已完成」标签即可看到完成时间，点对勾可恢复。
-- 左栏顶部：「未完成 / 已完成」两个标签切换列表，「全部 / 当天」筛选对两者都生效。
-- 右栏顶部（月历上方）：**当前时间卡**——上方数字时钟（时:分:秒），右侧一只**会走的指针钟表**（时/分/秒针随当前时间转动），下面是今日/本月/已完成统计。
-- 右栏：紧凑月历。**日期数字放大并居中**，有安排的日子在数字四周显示**彩色小方块**（颜色对应便签纸色，悬停可看内容，超过 4 条显示 `+N`），今天用**红色手绘圈**圈出；月历固定为紧凑高度，不再占满整屏。
-- 月历下方：所选日期的当日日程，包含已完成项，点右侧对勾可恢复为未完成。
+```
+dsh plugin --profile web add github:dreamlee0/dsh-sticky-notes
+```
 
-月份可用 `‹` `›` 切换，`今天` 回到当月并选中今天。
+Desktop profile uses the same command with `--profile desktop`. Restart `dsh web` (or the Desktop app) after installing; the panel icon appears in the left rail.
 
-## 数据存储
+## 功能 / Features
+
+- **便利贴墙**：新建便签时可设日期、时间、颜色；右上角圆圈即对勾，点一下完成。
+- **完成记录**：打勾不会删除数据——记录保留 `done: true` 与完成时间戳，切到「已完成」标签可查看并恢复。
+- **未完成 / 已完成** 两个标签，「全部 / 当天」筛选对两者都生效。
+- **当前时间卡**：数字时钟（时:分:秒）+ 一只会走的指针钟表（时/分/秒针实时转动），下方是今日 / 本月 / 已完成统计。
+- **紧凑月历**：日期数字放大居中；有安排的日子在数字四周显示彩色小方块（对应便签纸色，悬停看内容，超过 4 条显示 `+N`）；今天用红色手绘圈圈出。
+- **当日日程**：月历下方列出所选日期的全部安排，右侧对勾可切换完成状态。
+- **中英双语**，跟随 DSH 语言设置；容器与文字使用 `--dsw-alias-*` 主题变量，自动适配浅色 / 深色主题。
+
+| 左栏便利贴墙 | 右栏时间卡 + 月历 |
+|---|---|
+| 未完成 / 已完成标签、颜色纸、对勾 | 实时时钟、红圈今天、彩色小方块、当日日程 |
+
+## 数据存储 / Storage
 
 便利贴由两层保存：
 
-1. **本机文件（主存储）**：Host 半端把数据写到 `$DSH_HOME/memo-calendar/notes.json`（默认 `~/.dsh/memo-calendar/notes.json`），并通过 `/memo-calendar/state` 路由与页面同步。桌面端每次启动的本地端口可能不同，文件存储保证重启、换浏览器后笔记仍在。
-2. **浏览器 localStorage（缓存/兜底）**：键 `dsh.memo-calendar.v1`，打开面板时先立即显示缓存，再与 Host 文件按 `updatedAt` 取较新的一份；无 Web 载体或路由不可用时，面板仍可正常使用。
+1. **本机文件（主存储）**：Host 半端把数据写到 `$DSH_HOME/memo-calendar/notes.json`，并通过 `/memo-calendar/state` 路由与页面同步。桌面端每次启动的本地端口可能不同，文件存储保证重启、换浏览器后笔记仍在。
+2. **浏览器 localStorage（缓存/兜底）**：键 `dsh.memo-calendar.v1`，打开面板先立即显示缓存，再与 Host 文件按 `updatedAt` 取较新的一份；无 Web 载体或路由不可用时面板仍可使用。
 
-面板底部会显示当前状态（「已保存到本机，重启后仍在」或「数据保存在本浏览器」）。无论哪种状态，都可以用 **导出备份 / 导入**（JSON 文件）迁移数据。
+面板底部显示当前状态；无论哪种状态都可以用 **导出备份 / 导入**（JSON）迁移数据。
 
-完成的便签不会被删除：记录里保留 `done: true` 与 `completedAt`（完成时间戳），所以「已完成」标签、月历和当日日程都能继续看到它，随时可恢复为未完成。
-
-## 结构
+## 结构 / Layout
 
 | 文件 | 作用 |
 |---|---|
 | `package.json` | 包清单：`dsh.bundle.patch` + `dsh.client`（web） |
 | `cordis.patch.yml` | 插入 Loader 行 `memo-calendar` |
-| `index.js` | Host 半端：`/memo-calendar/state` 路由 + `notes.json` 读写 |
-| `client.js` | 浏览器半端：注册 `sidebar.panellist` 图标与 `main` 面板，渲染便签与日历 |
-| `locale/*.json` | 插件列表中的标题与描述（中文 / English） |
-| `icon.svg` | 插件图标（原创矢量图） |
+| `index.js` | Host 半端：`/memo-calendar/state` 路由 + `notes.json` 原子读写 |
+| `client.js` | 浏览器半端：注册 `sidebar.panellist` 图标与 `main` 面板 |
+| `locale/*.json` | 插件列表中的标题与描述（zh / en） |
+| `icon.svg` / `assets/icon-180.png` | 插件图标（原创矢量图与 180px 位图） |
 
-## 兼容性
+## 兼容性 / Compatibility
 
-面向 DSH 0.2.x Web/Desktop 的 slot 机制（`sidebar.panellist`、`main`、`ctx.locale`）。容器与文字使用 `--dsw-alias-*` 主题变量，跟随浅色 / 深色主题；便签纸、苔绿配色与叶枝插画属于插件自身的插画配色。
+面向 DSH 0.2.x Web / Desktop 的 slot 机制（`sidebar.panellist`、`main`、`ctx.locale`）。样式只使用 `--dsw-alias-*` 主题变量；便签纸色、苔绿配色与叶枝插画属于插件自身的插画配色。
+
+Requires a DSH 0.2.x Web or Desktop profile. No build step, no runtime dependencies.
+
+## License
+
+MIT

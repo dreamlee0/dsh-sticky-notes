@@ -16,6 +16,7 @@
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
+    "assets/icon-180.png",
     "README.md",
     "LICENSE"
   ],
@@ -31,6 +32,10 @@
     "type": "git",
     "url": "git+https://github.com/dreamlee0/dsh-sticky-notes.git"
   },
+  "bugs": {
+    "url": "https://github.com/dreamlee0/dsh-sticky-notes/issues"
+  },
+  "homepage": "https://github.com/dreamlee0/dsh-sticky-notes#readme",
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
     "client": {
