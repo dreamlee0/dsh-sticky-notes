@@ -37,13 +37,19 @@ Desktop profile uses the same command with `--profile desktop`. Restart `dsh web
 
 面板底部显示当前状态；无论哪种状态都可以用 **导出备份 / 导入**（JSON）迁移数据。
 
+### 路由访问控制 / Route access control
+
+`/memo-calendar/state` 由 `webServer.register` 挂载，载体本身不对这类路由做准入检查，所以 handler 自己做：每个请求先过 `ctx.connection.requestRejection()`（Host/Origin 围栏 + 绑定 authority 的 `dsh-auth-*` 浏览器会话），被拒时返回 `401` 且不暴露任何数据；未挂载 connection 服务的组合退化为**仅回环地址 + 同源标记**检查（`sec-fetch-site` / `origin`），并同样失败即拒。
+
+Every request to the route is admitted through `ctx.connection.requestRejection()` first and answered `401` without touching the document when that rejects it. A composition with no connection service falls back to a loopback-only fence plus a same-origin check (`sec-fetch-site` / `origin`), failing closed either way. Requests are never accepted from a cross-site page.
+
 ## 结构 / Layout
 
 | 文件 | 作用 |
 |---|---|
 | `package.json` | 包清单：`dsh.bundle.patch` + `dsh.client`（web） |
 | `cordis.patch.yml` | 插入 Loader 行 `memo-calendar` |
-| `index.js` | Host 半端：`/memo-calendar/state` 路由 + `notes.json` 原子读写 |
+| `index.js` | Host 半端：`/memo-calendar/state` 路由（含准入检查）+ `notes.json` 原子读写 |
 | `client.js` | 浏览器半端：注册 `sidebar.panellist` 图标与 `main` 面板 |
 | `locale/*.json` | 插件列表中的标题与描述（zh / en） |
 | `icon.svg` / `assets/icon-180.png` | 插件图标（原创矢量图与 180px 位图） |

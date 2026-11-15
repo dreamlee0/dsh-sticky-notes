@@ -12,6 +12,13 @@
  * The Client keeps a localStorage copy for instant paint and falls back to it
  * whenever the route is unavailable, so the board still works in compositions
  * without a Web carrier.
+ *
+ * ACCESS CONTROL. A `webServer.register` route gets no admission check from the
+ * carrier, so a page open in the same browser could otherwise read and rewrite
+ * the notes cross-site. Every request therefore passes `ctx.connection.
+ * requestRejection` first — the Host/Origin fence plus the authority-bound
+ * `dsh-auth-*` browser session — and falls back to a loopback-only fence when
+ * the composition mounts no connection service.
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -28,6 +35,55 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024;
 const MAX_NOTES = 5000;
 
 const COLORS = new Set(['pink', 'mint', 'lemon', 'sky', 'lilac']);
+
+/**
+ * The Host connection service, narrowed to the one check this route needs.
+ * Declared structurally rather than imported: the package is a browser-side
+ * dependency this Host half has no reason to resolve.
+ */
+function connectionOf(ctx) {
+  const service = (typeof ctx.get === 'function' ? ctx.get('connection') : undefined) ?? ctx.connection;
+  return service && typeof service.requestRejection === 'function' ? service : undefined;
+}
+
+/** Loopback and private-LAN literals, so a missing connection service still fails closed. */
+function isLoopback(address) {
+  if (typeof address !== 'string') return false;
+  const a = address.replace(/^::ffff:/i, '');
+  return a === '::1' || a === '127.0.0.1' || /^127\./.test(a);
+}
+
+/**
+ * True only when the request may touch the notes document.
+ *
+ * Order matters and mirrors the Host's own bridges: the connection service
+ * decides whenever it is mounted (it knows the session, the Host header fence
+ * and the Origin fence), and only a deployment without it falls back to a
+ * loopback-only check plus a same-origin marker.
+ */
+function isAdmitted(ctx, req) {
+  const connection = connectionOf(ctx);
+  if (connection) {
+    try {
+      return connection.requestRejection({ headers: req.headers }) === undefined;
+    } catch {
+      return false; // an auth service that throws has not vouched for the caller
+    }
+  }
+  const remote = req.socket?.remoteAddress ?? req.connection?.remoteAddress;
+  if (!isLoopback(remote)) return false;
+  const site = req.headers['sec-fetch-site'];
+  if (site === 'cross-site' || site === 'same-site') return false;
+  const origin = req.headers.origin;
+  if (origin === undefined) return true;
+  if (origin === 'null') return false;
+  try {
+    const host = req.headers.host;
+    return Boolean(host) && new URL(origin).host.toLowerCase() === host.toLowerCase();
+  } catch {
+    return false;
+  }
+}
 
 /** Resolve the Harness home the same way the rest of the Harness does. */
 function resolveHome(env = process.env) {
@@ -150,6 +206,12 @@ export function apply(ctx) {
       kind: 'exact',
       path: ROUTE_PATH,
       handler: async (req, res) => {
+        // Admission first: an unauthenticated caller learns nothing about the
+        // document, not even whether it exists.
+        if (!isAdmitted(ctx, req)) {
+          sendJson(res, 401, { error: 'unauthorized' });
+          return;
+        }
         try {
           await handleStateRequest(req, res, file);
         } catch (error) {

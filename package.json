@@ -1,6 +1,6 @@
 {
   "name": "dsh-sticky-notes",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Natural-toned sticky-note memo board with a red-circled month calendar and a live analog/digital clock, as a DeepSeek Harness Web UI panel.",
   "type": "module",
   "license": "MIT",
