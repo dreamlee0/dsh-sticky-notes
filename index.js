@@ -46,43 +46,79 @@ function connectionOf(ctx) {
   return service && typeof service.requestRejection === 'function' ? service : undefined;
 }
 
-/** Loopback and private-LAN literals, so a missing connection service still fails closed. */
-function isLoopback(address) {
+/** Loopback literals, so a missing connection service still fails closed. */
+function isLoopbackAddress(address) {
   if (typeof address !== 'string') return false;
   const a = address.replace(/^::ffff:/i, '');
-  return a === '::1' || a === '127.0.0.1' || /^127\./.test(a);
+  return a === '::1' || /^127\./.test(a) || a === 'localhost';
+}
+
+/** Loopback hostname, for the Host header rather than the socket. */
+function isLoopbackHostname(hostname) {
+  const h = String(hostname).toLowerCase();
+  return h === 'localhost' || h === '::1' || /^127\./.test(h);
+}
+
+/** A browser-signed request, or one that at least declares a same-origin site. */
+function browserSameOriginMarker(req) {
+  if (req.headers['sec-fetch-site'] === 'same-origin') return true;
+  if (typeof req.headers.origin === 'string') return true;
+  const cookie = req.headers.cookie;
+  return typeof cookie === 'string' && /(?:^|;\s*)dsh-auth-/.test(cookie);
+}
+
+/** Loopback socket, loopback Host, and no cross-site claim. */
+function isLoopbackRequest(req) {
+  if (!isLoopbackAddress(req.socket?.remoteAddress)) return false;
+  if (req.headers['x-forwarded-host'] !== undefined || req.headers['x-forwarded-for'] !== undefined) return false;
+  const host = req.headers.host;
+  if (typeof host !== 'string') return false;
+  let hostUrl;
+  try {
+    hostUrl = new URL('http://' + host);
+  } catch {
+    return false;
+  }
+  if (!isLoopbackHostname(hostUrl.hostname)) return false;
+  if (req.headers['sec-fetch-site'] === 'cross-site') return false;
+  const origin = req.headers.origin;
+  if (origin === undefined) return true;
+  if (origin === 'null') return false;
+  try {
+    return new URL(origin).host === hostUrl.host;
+  } catch {
+    return false;
+  }
 }
 
 /**
  * True only when the request may touch the notes document.
  *
- * Order matters and mirrors the Host's own bridges: the connection service
- * decides whenever it is mounted (it knows the session, the Host header fence
- * and the Origin fence), and only a deployment without it falls back to a
- * loopback-only check plus a same-origin marker.
+ * Two layers, in this order — the same shape the shipped bridges use:
+ *
+ * 1. The Host `connection` service, whenever it is mounted. It owns the
+ *    Host/Origin fence and the authority-bound signed browser session, which is
+ *    what a reverse-proxied or TLS-terminated deployment is admitted through.
+ *    `undefined` means it admits the request.
+ * 2. The fallback fence, unchanged for deployments without the service and for
+ *    direct clients the service does not admit: a browser same-origin marker,
+ *    then loopback socket + loopback Host and no cross-site claim.
+ *
+ * A request that clears neither is refused, so a cross-site page can never read
+ * or rewrite the notes even though `webServer.register` does not fence it.
  */
 function isAdmitted(ctx, req) {
   const connection = connectionOf(ctx);
   if (connection) {
     try {
-      return connection.requestRejection({ headers: req.headers }) === undefined;
+      if (connection.requestRejection({ headers: req.headers }) === undefined) return true;
     } catch {
-      return false; // an auth service that throws has not vouched for the caller
+      // A service that throws has not vouched for the caller; fall through to
+      // the local fence rather than admitting on an exception.
     }
   }
-  const remote = req.socket?.remoteAddress ?? req.connection?.remoteAddress;
-  if (!isLoopback(remote)) return false;
-  const site = req.headers['sec-fetch-site'];
-  if (site === 'cross-site' || site === 'same-site') return false;
-  const origin = req.headers.origin;
-  if (origin === undefined) return true;
-  if (origin === 'null') return false;
-  try {
-    const host = req.headers.host;
-    return Boolean(host) && new URL(origin).host.toLowerCase() === host.toLowerCase();
-  } catch {
-    return false;
-  }
+  if (!browserSameOriginMarker(req)) return false;
+  return isLoopbackRequest(req);
 }
 
 /** Resolve the Harness home the same way the rest of the Harness does. */
